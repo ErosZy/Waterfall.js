@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            font-size: 14px;
+        }
+
+        #waterfall-container {
+            position: relative;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+<div id="waterfall-container"></div>
+<script src="//cdn.bootcss.com/jquery/1.8.3/jquery.min.js"></script>
+<script src="Waterfall.js"></script>
+<script>
+    var waterfall = new Waterfall({
+        isReusable: true,
+        reuseCount: 100,
+        marginBottom: 50,
+        marginRight: 50,
+        ajaxConf: {
+            type: "GET",
+            dataType: "jsonp",
+            url: "http://localhost:3000"
+        }
+    });
+
+    waterfall.on("loadBefore", function (event) {
+        console.log("loading");
+    }).on("loadComplete", function (event, data) {
+        console.log(data);
+    }).on("loadError", function (event, err) {
+        console.log(err);
+    }).on("render", function (event, data) {
+        return [
+            '<img src="' + data.image + '" height="' + data.height + '" width="' + data.width + '" title="image"/>'
+        ].join('');
+    });
+</script>
+</body>
+</html>
