@@ -1,4 +1,5 @@
-;(function ($, window, undefined) {
+;
+(function ($, window, document, undefined) {
 
     var DEFAULT_OPT = {
         container: "#waterfall-container",
@@ -6,7 +7,7 @@
         marginRight: 20,
         marginBottom: 20,
         isReusable: true,
-        reuseCount: 40,
+        reuseCount: 100,
         ajaxConf: {
             type: "GET",
             dataType: "json",
@@ -28,49 +29,50 @@
         rCount = 40,
         itemCache = [],
         isUp = false,
-        isResize = false,
         oldST = 0,
         count = 0,
-        container = null;
+        $container = null,
+        containerOffset = null,
+        scrollHandler = null,
+        resizeHandler = null;
 
-    if (!$._filter) {
-        $._filter = function (arr, callback) {
-            var fn = function (item, index, arr) {
-                return callback(index, item, arr);
-            };
-
-            if (Array.prototype.filter) {
-                return Array.prototype.filter.call(arr, fn);
-            } else {
-                var tmp = [];
-                for (var i = 0, len = arr.length; i < len; i++) {
-                    var item = arr[i];
-                    if (fn(i, item, arr)) {
-                        tmp.push(item);
-                    }
-                }
-                return tmp;
-            }
+    /*
+     * [].filter及[].some的polyfill
+     */
+    var _filter = function (arr, callback) {
+        var fn = function (item, index, arr) {
+            return callback(index, item, arr);
         };
-    }
 
-    if (!$._some) {
-        $._some = function (arr, callback) {
-            var fn = function (item, index, arr) {
-                return callback(index, item, arr);
-            };
+        if (Array.prototype.filter) {
+            return Array.prototype.filter.call(arr, fn);
+        } else {
+            var tmp = [];
+            for (var i = 0, len = arr.length; i < len; i++) {
+                var item = arr[i];
+                if (fn(i, item, arr)) {
+                    tmp.push(item);
+                }
+            }
+            return tmp;
+        }
+    };
 
-            if (Array.prototype.some) {
-                return Array.prototype.some.call(arr, fn);
-            } else {
-                for (var i = 0, len = arr.length; i < len; i++) {
-                    if (fn(i, arr[i], arr)) {
-                        return true;
-                    }
+    var _some = function (arr, callback) {
+        var fn = function (item, index, arr) {
+            return callback(index, item, arr);
+        };
+
+        if (Array.prototype.some) {
+            return Array.prototype.some.call(arr, fn);
+        } else {
+            for (var i = 0, len = arr.length; i < len; i++) {
+                if (fn(i, arr[i], arr)) {
+                    return true;
                 }
             }
         }
-    }
+    };
 
     function Waterfall(opt) {
         if (!(this instanceof Waterfall)) {
@@ -78,10 +80,48 @@
         }
 
         this.opt = $.extend({}, DEFAULT_OPT, opt);
+        this.isStoped = false;
         rCount = this.opt.reuseCount;
-        container = $(this.opt.container);
+        $container = $(this.opt.container);
+        containerOffset = $container.offset();
         this._init();
     }
+
+    Waterfall.prototype.stop = function () {
+        this.isStoped = true;
+    };
+
+    Waterfall.prototype.start = function () {
+        this.isStoped = false;
+    };
+
+    Waterfall.prototype.setColums = function (colums) {
+        this._initColums(colums);
+        this._animate();
+        this._reuse();
+    };
+
+    Waterfall.prototype.clear = function () {
+        var _me = this,
+            $_me = $(_me);
+
+        $container.html('').height(0);
+        $_me.trigger("destory");
+
+        columLength = colums = itemInfos = prevColums = itemCache = [];
+
+        $(window).off("scroll", scrollHandler)
+            .off("resize", resizeHandler);
+
+        $.each([
+            "loadBefore",
+            "loadComplete",
+            "loadError",
+            "render",
+            "destory"], function (index, item) {
+            $_me.off(item);
+        });
+    };
 
     Waterfall.prototype.on = function () {
         var $_me = $(this);
@@ -99,9 +139,17 @@
         var _me = this;
         _me._initColums(_me.opt.columns);
         _me._addEvent();
-        _me._loadResources(function (infos) {
-            _me._render(infos);
-        })
+
+        if (!_me.isStoped) {
+            _me._loadResources(function (infos) {
+                _me._render(infos);
+            })
+        }
+
+        setTimeout(function () {
+            // 如果注册了resize event，则根据相关内容来进行colums设置
+            $(_me).trigger("resize", cw);
+        });
 
     };
 
@@ -135,20 +183,17 @@
      */
     Waterfall.prototype._addEvent = function () {
         var _me = this,
-            optColums = _me.opt.columns,
-            cloneColums;
+            $_me = $(_me);
 
-        $(window).on("scroll", scrollHandler);
+        scrollHandler = function (ev) {
+            if (_me.isStoped) {
+                return;
+            }
 
-        $(window).on("resize", resizeHandler);
-
-        function scrollHandler(ev) {
-            var scrollTop = $(window).scrollTop();
+            var scrollTop = $(window).scrollTop() - containerOffset.top;
 
             isUp = scrollTop - oldST < 0;
             oldST = scrollTop;
-
-            _me._clearAnimate();
 
             //判断ajax加载，还是进行节点复用
             if ((renderLength + 1) * ch + scrollTop >= minColumLength) {
@@ -160,32 +205,18 @@
             } else {
                 _me._reuse()
             }
-        }
+        };
 
-        function resizeHandler() {
+        resizeHandler = function (ev) {
             clearTimeout(_me.timer);
             _me.timer = setTimeout(function () {
-                ch = document.documentElement.clientHeight || document.body.clientHeight;
                 cw = document.documentElement.clientWidth || document.body.clientWidth;
+                $_me.trigger("resize", cw);
+            }, 250);
+        };
 
-                if (cw < 800 && !isResize) {
-                    isResize = true;
-                    cloneColums = optColums.concat();
-                    prevColums = optColums.concat();
-                    cloneColums.pop();
-
-                    _me._initColums(cloneColums);
-                    _me._animate();
-                } else if (cw > 1000 && isResize) {
-                    isResize = false;
-                    optColums = prevColums;
-
-                    _me._initColums(optColums);
-                    _me._animate();
-                }
-
-            }, 300);
-        }
+        $(window).on("scroll", scrollHandler);
+        $(window).on("resize", resizeHandler);
     };
 
     /**
@@ -201,7 +232,9 @@
         ajaxConf = $.extend({}, ajaxConf, {
             success: function (data) {
                 if (data) {
-                    $_me.trigger("loadComplete", {data: data});
+                    $_me.trigger("loadComplete", {
+                        data: data
+                    });
                     itemCount += data.length;
                     callback.call(_me, data);
                     isLoading = false;
@@ -225,10 +258,12 @@
         var _me = this,
             isReusable = _me.opt.isReusable;
 
-        if (!isReusable || rCount >= itemCount) {
-            _me._addItems(infos);
-        } else {
-            _me._loadReuse(infos);
+        if (infos && infos.length) {
+            if (!isReusable || rCount >= itemCount) {
+                _me._addItems(infos);
+            } else {
+                _me._loadReuse(infos);
+            }
         }
     };
 
@@ -239,7 +274,7 @@
     Waterfall.prototype._loadReuse = function (infos) {
         var _me = this,
             $_me = $(_me),
-            scrollTop = $(window).scrollTop(),
+            scrollTop = $(window).scrollTop() - containerOffset.top,
             reuseItems = _me._getReuseItems(itemInfos, filter),
             rLen = reuseItems.length,
             iLen = infos.length;
@@ -287,7 +322,7 @@
                     height: h
                 });
 
-                container.height(maxColumLength);
+                $container.height(maxColumLength);
             }
         });
 
@@ -303,13 +338,13 @@
      */
     Waterfall.prototype._reuse = function () {
         var _me = this,
-            scrollTop = $(window).scrollTop(),
+            scrollTop = $(window).scrollTop() - containerOffset.top,
             reuseItems = _me._getReuseItems(itemCache, filter),
             sortInfos = itemInfos.concat(),
             rLen;
 
         for (var i = reuseItems.length - 1; i >= 0; i--) {
-            var flag = $._some(itemInfos, function (index, item) {
+            var flag = _some(itemInfos, function (index, item) {
                 return item.index == reuseItems[i].index &&
                     item.top == reuseItems[i].top
             });
@@ -363,6 +398,7 @@
         });
 
         function filter(index, item) {
+            var containerTop = containerOffset.top;
             return item.top + item.height > scrollTop - ch && item.top < scrollTop + 2 * ch;
         }
     };
@@ -374,7 +410,7 @@
     Waterfall.prototype._getReuseItems = function (items, callback) {
         var tmp = [];
 
-        tmp = $._filter(items, callback);
+        tmp = _filter(items, callback);
         tmp = tmp.sort(function (t1, t2) {
             return t1.top - t2.top;
         });
@@ -426,8 +462,8 @@
                     index: index
                 });
 
-                container.height(maxColumLength);
-                container.append(target);
+                $container.height(maxColumLength);
+                $container.append(target);
             }
         })
     };
@@ -458,7 +494,14 @@
      * @private
      */
     Waterfall.prototype._getItem = function (width, height, left, top) {
-        return $("<div class='waterfall-item' style='width:" + width + "px; top:" + top + "px" + "; left:" + left + "px; overflow:hidden; position:absolute;" + "'></div>");
+        return $("<div class='waterfall-item'></div>").css({
+            position: "absolute",
+            overflow: "hidden",
+            height: height,
+            width: width,
+            top: top,
+            left: left
+        });
     };
 
     /**
@@ -468,7 +511,7 @@
      */
     Waterfall.prototype._animate = function () {
         var _me = this,
-            scrollTop = $(window).scrollTop(),
+            scrollTop = $(window).scrollTop() - containerOffset.top,
             items, iLen, lLen;
 
         $.each(itemCache, function (index, item) {
@@ -494,7 +537,7 @@
                 target = itemInfos[index].target;
 
             target.html(htmlStr);
-            target.addClass("animate").css({
+            target.css({
                 top: top,
                 left: left
             });
@@ -540,16 +583,6 @@
     };
 
     /**
-     * 清除动画class
-     * @private
-     */
-    Waterfall.prototype._clearAnimate = function () {
-        $.each(itemInfos, function (index, item) {
-            item.target.removeClass("animate");
-        });
-    };
-
-    /**
      * 设置属性
      * @param target
      * @param attrs
@@ -565,4 +598,4 @@
 
     window.Waterfall = Waterfall;
 
-}($, window));
+}($, window, document));

@@ -30,7 +30,7 @@ var server = http.createServer(function (request, response) {
         'Content-Type': contentType
     });
     var tmp = [];
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 5; i++) {
         tmp = tmp.concat(data);
     }
     response.write(query.callback+"("+JSON.stringify(tmp)+")");
