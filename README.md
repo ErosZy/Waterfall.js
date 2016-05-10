@@ -70,7 +70,7 @@ var params = {
         columns: [200, 200, 200, 200], // 各列宽度
         marginRight: 20, // 右间距
         marginBottom: 20, // 下间距
-        isReusable: true, // 是否启用节点服用
+        isReusable: true, // 是否启用节点复用
         reuseCount: 100, // 节点复用数(实际可用节点~=reuseCount)
         ajaxConf: { // 网络请求相关配置
             type: "GET",
